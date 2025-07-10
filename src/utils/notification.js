@@ -62,63 +62,92 @@ const NOTIFICATION_TEMPLATES = {
  * @param {Object} [params.metadata] - Additional notification data
  * @returns {Promise<Object>} Created notification
  */
+
 export const sendNotification = async ({
   recipientId,
   senderId,
   type,
   relatedItem = null,
   metadata = {},
+  io = null,
 }) => {
+  // Validate notification type
   if (!Object.values(NOTIFICATION_TYPES).includes(type)) {
     throw new Error(`Invalid notification type: ${type}`);
   }
 
-  // Check if recipient has disabled this notification type
-  const recipient = await User.findById(recipientId).select(
-    "notificationPreferences"
-  );
-  if (!recipient) {
-    throw new Error("Recipient not found");
-  }
+  // Validate recipient exists and wants this notification
+  const recipient = await User.findById(recipientId)
+    .select("notificationPreferences")
+    .lean();
+  if (!recipient) throw new Error("Recipient not found");
+  if (recipient.notificationPreferences?.[type] === false) return null;
 
-  // Skip if user has disabled this notification type
-  if (recipient.notificationPreferences?.[type] === false) {
-    return null;
-  }
+  // Validate sender exists
+  const sender = await User.findById(senderId)
+    .select("username profile.avatar")
+    .lean();
+  if (!sender) throw new Error("Sender not found");
 
-  // Get sender details
-  const sender = await User.findById(senderId).select("username");
-  if (!sender) {
-    throw new Error("Sender not found");
-  }
-
-  // Generate notification message
-  const message = NOTIFICATION_TEMPLATES[type](sender, relatedItem);
-
-  // Prepare notification data
+  // Create notification data
   const notificationData = {
     recipient: recipientId,
     sender: senderId,
     type,
-    message,
+    message: NOTIFICATION_TEMPLATES[type](sender, relatedItem),
     metadata,
+    ...(relatedItem && {
+      relatedItem: relatedItem._id,
+      relatedItemModel: relatedItem.constructor?.modelName || 'Unknown',
+      ...(relatedItem.constructor?.modelName === "Post" && {
+        metadata: {
+          ...metadata,
+          postPreviewUrl: relatedItem.images?.[0]?.url
+        }
+      }),
+      ...(relatedItem.constructor?.modelName === "Story" && {
+        metadata: {
+          ...metadata,
+          storyThumbnail: relatedItem.media?.url
+        }
+      })
+    })
   };
 
-  // Add related item if provided
-  if (relatedItem) {
-    notificationData.relatedItem = relatedItem._id;
-    notificationData.relatedItemModel = relatedItem.constructor.modelName;
+  // Create notification
+  const notification = await Notification.create(notificationData);
 
-    // Add relevant metadata based on item type
-    if (relatedItem.constructor.modelName === "Post") {
-      notificationData.metadata.postPreviewUrl = relatedItem.images?.[0]?.url;
-    } else if (relatedItem.constructor.modelName === "Story") {
-      notificationData.metadata.storyThumbnail = relatedItem.media?.url;
+  // Send real-time notification if socket available
+  if (io) {
+    try {
+      const populated = await Notification.findById(notification._id)
+        .populate("sender", "username profile.avatar")
+        .populate({
+          path: "relatedItem",
+          select: "content images media",
+          options: { retainNullValues: true }
+        })
+        .lean();
+
+      io.of("/notifications")
+        .to(`user_${recipientId}`)
+        .emit("notification:new", populated);
+
+      // Update unread count
+      const unreadCount = await Notification.countDocuments({
+        recipient: recipientId,
+        isRead: false
+      });
+      
+      io.of("/notifications")
+        .to(`user_${recipientId}`)
+        .emit("notification:count", { unreadCount });
+    } catch (error) {
+      console.error("Failed to send real-time notification:", error);
     }
   }
 
-  // Create and return notification
-  return Notification.create(notificationData);
+  return notification;
 };
 
 /**

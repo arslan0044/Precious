@@ -9,7 +9,7 @@ import {
   forgetPasswordOTPVerification,
   updatePassword,
 } from "./service.js";
-import { ApiError } from "../../utils/apiError.js";
+import { ForbiddenError,ApiError } from "../../utils/apiError.js";
 
 // POST /auth/send-otp
 export async function sendOtpController(req, res, next) {

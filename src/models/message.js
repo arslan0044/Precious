@@ -11,7 +11,7 @@ const messageSchema = new Schema(
     },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "user",
       required: true,
       index: true,
     },
@@ -30,7 +30,7 @@ const messageSchema = new Schema(
         },
         type: {
           type: String,
-          enum: ["image", "video", "audio", "file"],
+          enum: ["image", "video", "audio", "file", "voice_note"],
           required: true,
         },
         width: {
@@ -48,17 +48,113 @@ const messageSchema = new Schema(
         duration: {
           type: Number,
           required: function () {
-            return this.type === "video" || this.type === "audio";
+            return (
+              this.type === "video" ||
+              this.type === "audio" ||
+              this.type === "voice_note"
+            );
           },
         },
         fileName: String,
         fileSize: Number,
         thumbnailUrl: String,
+        mimeType: String,
       },
     ],
     replyTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Message",
+    },
+    // Forward functionality
+    forwardedFrom: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+    },
+    forwardedFromUser: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+    },
+    // Message type for different message types
+    messageType: {
+      type: String,
+      enum: [
+        "text",
+        "media",
+        "system",
+        "location",
+        "contact",
+        "poll",
+        "story_mention",
+      ],
+      default: "text",
+    },
+    // System message data
+    systemMessage: {
+      type: {
+        type: String,
+        enum: [
+          "user_joined",
+          "user_left",
+          "admin_changed",
+          "group_created",
+          "group_name_changed",
+          "group_photo_changed",
+          "message_deleted",
+          "user_added",
+          "user_removed",
+        ],
+      },
+      data: mongoose.Schema.Types.Mixed,
+    },
+    // Location data
+    location: {
+      latitude: Number,
+      longitude: Number,
+      address: String,
+      name: String,
+    },
+    // Contact data
+    contact: {
+      name: String,
+      phone: String,
+      email: String,
+    },
+    // Poll data
+    poll: {
+      question: String,
+      options: [
+        {
+          text: String,
+          votes: [
+            {
+              user: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "user",
+              },
+              votedAt: {
+                type: Date,
+                default: Date.now,
+              },
+            },
+          ],
+        },
+      ],
+      allowMultipleVotes: {
+        type: Boolean,
+        default: false,
+      },
+      expiresAt: Date,
+    },
+    // Story mention
+    storyMention: {
+      storyId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Story",
+      },
+      mentionedUser: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "user",
+      },
     },
     isDeleted: {
       type: Boolean,
@@ -67,19 +163,49 @@ const messageSchema = new Schema(
     deletedFor: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        ref: "user",
       },
     ],
+    deletedAt: Date,
+    // Enhanced status tracking
     status: {
       type: String,
       enum: ["sending", "sent", "delivered", "read", "failed"],
       default: "sending",
     },
+    // Read receipts with timestamps
+    readBy: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "user",
+          required: true,
+        },
+        readAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    // Delivered receipts with timestamps
+    deliveredTo: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "user",
+          required: true,
+        },
+        deliveredAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     reactions: [
       {
         user: {
           type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
+          ref: "user",
           required: true,
         },
         emoji: {
@@ -87,7 +213,6 @@ const messageSchema = new Schema(
           required: true,
           validate: {
             validator: function (emoji) {
-              // Simple emoji validation (can be enhanced)
               return /\p{Emoji}/u.test(emoji);
             },
             message: (props) => `${props.value} is not a valid emoji`,
@@ -99,9 +224,82 @@ const messageSchema = new Schema(
         },
       },
     ],
+    // Message editing
+    editedAt: Date,
+    editHistory: [
+      {
+        content: String,
+        media: [
+          {
+            url: String,
+            type: String,
+            fileName: String,
+          },
+        ],
+        editedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    // Scheduled messages
+    scheduledFor: Date,
+    isScheduled: {
+      type: Boolean,
+      default: false,
+    },
+    // Disappearing messages
+    disappearingMessageTimer: Number, // in seconds
+    disappearsAt: Date,
+    // Pinned message
+    isPinned: {
+      type: Boolean,
+      default: false,
+    },
+    pinnedAt: Date,
+    pinnedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+    },
+    // Message priority
+    priority: {
+      type: String,
+      enum: ["low", "normal", "high", "urgent"],
+      default: "normal",
+    },
+    // Mentions in message
+    mentions: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "user",
+        },
+        startIndex: Number,
+        endIndex: Number,
+      },
+    ],
+    // Hashtags
+    hashtags: [String],
+    // Link preview
+    linkPreview: {
+      url: String,
+      title: String,
+      description: String,
+      image: String,
+      siteName: String,
+    },
     metadata: {
-      clientId: String, // For client-side message tracking
-      deviceId: String, // For multi-device sync
+      clientId: String,
+      deviceId: String,
+      platform: {
+        type: String,
+        enum: ["web", "ios", "android", "desktop"],
+      },
+      appVersion: String,
+      userAgent: String,
+      // For message synchronization
+      localId: String,
+      batchId: String,
     },
   },
   {
@@ -127,65 +325,164 @@ const messageSchema = new Schema(
   }
 );
 
-// Virtual for sender details (when populated)
+// Compound indexes for better query performance
+messageSchema.index({ conversation: 1, createdAt: -1 });
+messageSchema.index({ sender: 1, createdAt: -1 });
+messageSchema.index({ conversation: 1, isPinned: 1 });
+messageSchema.index({ conversation: 1, messageType: 1 });
+messageSchema.index({ scheduledFor: 1, isScheduled: 1 });
+messageSchema.index({ disappearsAt: 1 });
+messageSchema.index({ "mentions.user": 1 });
+messageSchema.index({ hashtags: 1 });
+messageSchema.index({ "readBy.user": 1 });
+messageSchema.index({ "deliveredTo.user": 1 });
+
+// Text search index
+messageSchema.index({
+  content: "text",
+  "contact.name": "text",
+  "poll.question": "text",
+});
+
+// Virtual for sender details
 messageSchema.virtual("senderDetails", {
-  ref: "User",
+  ref: "user",
   localField: "sender",
   foreignField: "_id",
   justOne: true,
   options: {
-    select: "username name profile.avatar",
+    select: "username name profile.avatar isOnline",
   },
 });
 
-// Virtual for reply message details (when populated)
+// Virtual for reply message details
 messageSchema.virtual("replyToDetails", {
   ref: "Message",
   localField: "replyTo",
   foreignField: "_id",
   justOne: true,
   options: {
-    select: "content sender media createdAt",
+    select: "content sender media createdAt messageType",
     match: { isDeleted: false },
   },
 });
 
-// Indexes for optimized queries
-messageSchema.index({ conversation: 1, createdAt: -1 });
-messageSchema.index({ sender: 1 });
-messageSchema.index({ createdAt: -1 });
-messageSchema.index({ "reactions.user": 1 });
+// Virtual for forwarded message details
+messageSchema.virtual("forwardedFromDetails", {
+  ref: "Message",
+  localField: "forwardedFrom",
+  foreignField: "_id",
+  justOne: true,
+  options: {
+    select: "content sender media createdAt messageType",
+    match: { isDeleted: false },
+  },
+});
+
+// TTL index for disappearing messages
+messageSchema.index({ disappearsAt: 1 }, { expireAfterSeconds: 0 });
+
+// Pre-save middleware
+messageSchema.pre("save", function (next) {
+  // Set disappearing message timer
+  if (this.disappearingMessageTimer && !this.disappearsAt) {
+    this.disappearsAt = new Date(
+      Date.now() + this.disappearingMessageTimer * 1000
+    );
+  }
+
+  // Extract mentions from content
+  if (this.content && this.isModified("content")) {
+    this.extractMentions();
+  }
+
+  // Extract hashtags from content
+  if (this.content && this.isModified("content")) {
+    this.extractHashtags();
+  }
+
+  next();
+});
+
+// Instance method to extract mentions
+messageSchema.methods.extractMentions = function () {
+  const mentionRegex = /@(\w+)/g;
+  const mentions = [];
+  let match;
+
+  while ((match = mentionRegex.exec(this.content)) !== null) {
+    mentions.push({
+      username: match[1],
+      startIndex: match.index,
+      endIndex: match.index + match[0].length,
+    });
+  }
+
+  // Note: You'll need to resolve usernames to user IDs in your application logic
+  return mentions;
+};
+
+// Instance method to extract hashtags
+messageSchema.methods.extractHashtags = function () {
+  const hashtagRegex = /#(\w+)/g;
+  const hashtags = [];
+  let match;
+
+  while ((match = hashtagRegex.exec(this.content)) !== null) {
+    hashtags.push(match[1].toLowerCase());
+  }
+
+  this.hashtags = [...new Set(hashtags)]; // Remove duplicates
+};
 
 /**
- * Create a new message
- * @param {Object} messageData
- * @returns {Promise<Message>}
+ * Create a new message with enhanced features
  */
 messageSchema.statics.createMessage = async function (messageData) {
   const message = await this.create(messageData);
 
-  // Populate sender details before returning
   return this.findById(message._id)
     .populate("senderDetails")
-    .populate("replyToDetails");
+    .populate("replyToDetails")
+    .populate("forwardedFromDetails")
+    .populate("mentions.user", "username name profile.avatar");
 };
 
 /**
- * Get messages for a conversation with pagination
- * @param {String} conversationId
- * @param {Object} options
- * @param {Number} [options.limit=20]
- * @param {Date} [options.before]
- * @returns {Promise<Array<Message>>}
+ * Get messages with enhanced filtering and pagination
  */
 messageSchema.statics.getMessages = async function (
   conversationId,
-  { limit = 20, before } = {}
+  {
+    limit = 20,
+    before,
+    after,
+    messageType,
+    search,
+    userId,
+    includeDeleted = false,
+  } = {}
 ) {
-  const query = { conversation: conversationId, isDeleted: false };
+  const query = { conversation: conversationId };
+
+  if (!includeDeleted) {
+    query.$and = [{ isDeleted: false }, { deletedFor: { $nin: [userId] } }];
+  }
+
+  if (messageType) {
+    query.messageType = messageType;
+  }
+
+  if (search) {
+    query.$text = { $search: search };
+  }
 
   if (before) {
     query.createdAt = { $lt: before };
+  }
+
+  if (after) {
+    query.createdAt = { $gt: after };
   }
 
   return this.find(query)
@@ -193,16 +490,172 @@ messageSchema.statics.getMessages = async function (
     .limit(limit)
     .populate("senderDetails")
     .populate("replyToDetails")
+    .populate("forwardedFromDetails")
+    .populate("mentions.user", "username name profile.avatar")
+    .populate("reactions.user", "username name profile.avatar")
     .lean();
 };
 
 /**
- * Delete a message (soft delete)
- * @param {String} messageId
- * @param {String} userId
- * @param {Boolean} forEveryone
- * @returns {Promise<Message>}
+ * Mark message as read by user
  */
+messageSchema.statics.markAsRead = async function (messageId, userId) {
+  const message = await this.findById(messageId);
+
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  // Check if already read
+  const alreadyRead = message.readBy.some(
+    (read) => read.user.toString() === userId
+  );
+
+  if (!alreadyRead) {
+    message.readBy.push({ user: userId, readAt: new Date() });
+    await message.save();
+  }
+
+  return message;
+};
+
+/**
+ * Mark message as delivered to user
+ */
+messageSchema.statics.markAsDelivered = async function (messageId, userId) {
+  const message = await this.findById(messageId);
+
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  const alreadyDelivered = message.deliveredTo.some(
+    (delivered) => delivered.user.toString() === userId
+  );
+
+  if (!alreadyDelivered) {
+    message.deliveredTo.push({ user: userId, deliveredAt: new Date() });
+    await message.save();
+  }
+
+  return message;
+};
+
+/**
+ * Edit message content
+ */
+messageSchema.statics.editMessage = async function (
+  messageId,
+  userId,
+  newContent,
+  newMedia = []
+) {
+  const message = await this.findById(messageId);
+
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  if (message.sender.toString() !== userId) {
+    throw new Error("Only sender can edit the message");
+  }
+
+  // Check if message is too old to edit (15 minutes)
+  const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+  if (message.createdAt < fifteenMinutesAgo) {
+    throw new Error("Message is too old to edit");
+  }
+
+  // Store edit history
+  message.editHistory.push({
+    content: message.content,
+    media: message.media,
+    editedAt: new Date(),
+  });
+
+  message.content = newContent;
+  message.media = newMedia;
+  message.editedAt = new Date();
+
+  await message.save();
+
+  return this.findById(message._id)
+    .populate("senderDetails")
+    .populate("replyToDetails");
+};
+
+/**
+ * Pin/Unpin message
+ */
+messageSchema.statics.togglePin = async function (
+  messageId,
+  userId,
+  conversationId
+) {
+  const message = await this.findById(messageId);
+
+  if (!message) {
+    throw new Error("Message not found");
+  }
+
+  // Check if user has permission to pin (admin check would be done in conversation logic)
+  message.isPinned = !message.isPinned;
+
+  if (message.isPinned) {
+    message.pinnedAt = new Date();
+    message.pinnedBy = userId;
+  } else {
+    message.pinnedAt = null;
+    message.pinnedBy = null;
+  }
+
+  await message.save();
+  return message;
+};
+
+/**
+ * Vote on poll
+ */
+messageSchema.statics.voteOnPoll = async function (
+  messageId,
+  userId,
+  optionIndex
+) {
+  const message = await this.findById(messageId);
+
+  if (!message || !message.poll) {
+    throw new Error("Poll not found");
+  }
+
+  if (message.poll.expiresAt && message.poll.expiresAt < new Date()) {
+    throw new Error("Poll has expired");
+  }
+
+  const option = message.poll.options[optionIndex];
+  if (!option) {
+    throw new Error("Invalid option");
+  }
+
+  // Check if user already voted
+  const existingVote = option.votes.find(
+    (vote) => vote.user.toString() === userId
+  );
+
+  if (existingVote) {
+    // Remove existing vote
+    option.votes = option.votes.filter(
+      (vote) => vote.user.toString() !== userId
+    );
+  } else {
+    // Add new vote
+    option.votes.push({ user: userId, votedAt: new Date() });
+  }
+
+  await message.save();
+  return message;
+};
+
+// Rest of the existing methods...
 messageSchema.statics.deleteMessage = async function (
   messageId,
   userId,
@@ -215,14 +668,12 @@ messageSchema.statics.deleteMessage = async function (
   }
 
   if (forEveryone) {
-    // Only sender can delete for everyone
     if (message.sender.toString() !== userId) {
       throw new Error("Only sender can delete for everyone");
     }
     message.isDeleted = true;
-    message.deletedFor = message.conversation.participants;
+    message.deletedAt = new Date();
   } else {
-    // Delete for this user only
     if (!message.deletedFor.includes(userId)) {
       message.deletedFor.push(userId);
     }
@@ -232,13 +683,6 @@ messageSchema.statics.deleteMessage = async function (
   return message;
 };
 
-/**
- * Add reaction to a message
- * @param {String} messageId
- * @param {String} userId
- * @param {String} emoji
- * @returns {Promise<Message>}
- */
 messageSchema.statics.addReaction = async function (messageId, userId, emoji) {
   const message = await this.findById(messageId);
 
@@ -246,12 +690,10 @@ messageSchema.statics.addReaction = async function (messageId, userId, emoji) {
     throw new Error("Message not found");
   }
 
-  // Remove existing reaction from this user
   message.reactions = message.reactions.filter(
     (reaction) => reaction.user.toString() !== userId
   );
 
-  // Add new reaction
   message.reactions.push({ user: userId, emoji });
   await message.save();
 
@@ -260,12 +702,6 @@ messageSchema.statics.addReaction = async function (messageId, userId, emoji) {
     .populate("reactions.user", "username name profile.avatar");
 };
 
-/**
- * Remove reaction from a message
- * @param {String} messageId
- * @param {String} userId
- * @returns {Promise<Message>}
- */
 messageSchema.statics.removeReaction = async function (messageId, userId) {
   const message = await this.findById(messageId);
 
@@ -282,33 +718,40 @@ messageSchema.statics.removeReaction = async function (messageId, userId) {
     .populate("senderDetails")
     .populate("reactions.user", "username name profile.avatar");
 };
-
-/**
- * Update message status
- * @param {String} messageId
- * @param {String} status
- * @returns {Promise<Message>}
- */
-messageSchema.statics.updateStatus = async function (messageId, status) {
-  const validStatuses = ["sending", "sent", "delivered", "read", "failed"];
-
-  if (!validStatuses.includes(status)) {
-    throw new Error("Invalid message status");
-  }
-
-  const message = await this.findByIdAndUpdate(
-    messageId,
-    { status },
-    { new: true }
-  );
-
+messageSchema.statics.updateStatus = async function (
+  messageId,
+  status,
+  userId
+) {
+  const message = await this.findById(messageId);
   if (!message) {
     throw new Error("Message not found");
   }
-
-  return message;
+  if (!["sending", "sent", "delivered", "read", "failed"].includes(status)) {
+    throw new Error("Invalid status");
+  }
+  message.status = status;
+  if (status === "delivered" || status === "read") {
+    const alreadyDelivered = message.deliveredTo.some(
+      (delivered) => delivered.user.toString() === userId
+    );
+    if (!alreadyDelivered) {
+      message.deliveredTo.push({ user: userId, deliveredAt: new Date() });
+    }
+  } else if (status === "read") {
+    const alreadyRead = message.readBy.some(
+      (read) => read.user.toString() === userId
+    );
+    if (!alreadyRead) {
+      message.readBy.push({ user: userId, readAt: new Date() });
+    }
+  }
+  await message.save();
+  console.log(`Message status updated to ${status} for user ${userId}`);
+  return this.findById(message._id)
+    .populate("senderDetails")
+    .populate("reactions.user", "username name profile.avatar");
 };
-
 const Message = model("Message", messageSchema);
 
 export default Message;

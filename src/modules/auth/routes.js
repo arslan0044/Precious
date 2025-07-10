@@ -94,8 +94,12 @@ router.post("/verify-otp", validate(verifyOTPSchecma), verifyOtpController);
  *               email:
  *                 type: string
  *                 format: email
+ *               username:
+ *                 type: string
+ *                 example: user123
  *               name:
  *                 type: string
+ *                 example: John Doe
  *               password:
  *                 type: string
  *                 format: password
@@ -110,12 +114,12 @@ router.post("/verify-otp", validate(verifyOTPSchecma), verifyOtpController);
  *         description: OTP not verified
  */
 router.post("/register", validate(registerSchema), registerUserController);
-
 /**
  * @swagger
  * /api/auth/login:
  *   post:
- *     summary: Login with email and password
+ *     summary: Authenticate user with email and password
+ *     description: Returns an access token upon successful authentication
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -123,22 +127,61 @@ router.post("/register", validate(registerSchema), registerUserController);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [email, password]
+ *             required:
+ *               - email
+ *               - password
  *             properties:
  *               email:
  *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *                 description: Registered email address
  *               password:
  *                 type: string
  *                 format: password
+ *                 minLength: 8
+ *                 example: 12345678
+ *                 description: User password (min 8 characters)
  *     responses:
  *       200:
- *         description: Login successful
+ *         description: Successfully authenticated
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: Invalid request body
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               status: error
+ *               message: Email and password are required
  *       401:
- *         $ref: '#/components/responses/UnauthorizedError'
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               status: error
+ *               message: Invalid credentials
+ *       429:
+ *         description: Too many requests
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               status: error
+ *               message: Too many login attempts, please try again later
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
  */
 router.post("/login", validate(loginSchema), loginUserController);
 

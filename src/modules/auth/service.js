@@ -12,6 +12,7 @@ import {
   BadRequestError,
   ConflictError,
   NotFoundError,
+  ForbiddenError,
 } from "../../utils/apiError.js";
 import bcrypt from "bcrypt";
 import admin from "../../config/firebase.js";
@@ -76,7 +77,7 @@ export async function verifyOtp(email, code) {
 }
 
 // STEP 3: Register User
-export async function registerUser({ email, name, password }) {
+export async function registerUser({ email, name, username, password }) {
   const checkUser = await User.findOne({ email });
   if (checkUser) throw new BadRequestError("Email is already in use");
 
@@ -87,6 +88,7 @@ export async function registerUser({ email, name, password }) {
 
   const user = await User.create({
     name,
+    username,
     email,
     password: hashedPassword,
     isEmailVerified: true,

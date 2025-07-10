@@ -2,11 +2,19 @@ import {
   userInfoController,
   updatePasswordController,
   updateProfileController,
+  requestFollowController,
+  acceptFollowRequestController,
+  rejectFollowRequestController,
+  unfollowUserController,
+  blockUserController,
+  unblockUserController,
+  getFollowStatusController,getUserRelationshipsController
 } from "./controller.js";
 import express from "express";
 import { authenticate } from "../../middlewares/auth.js";
 const router = express.Router();
 router.use(authenticate);
+
 /**
  * @swagger
  * /api/user/me:
@@ -275,7 +283,7 @@ router.put("/update-password", updatePasswordController);
  *         updatedAt:
  *           type: string
  *           format: date-time
- * 
+ *
  *     UserProfile:
  *       type: object
  *       properties:
@@ -299,7 +307,7 @@ router.put("/update-password", updatePasswordController);
  *           type: string
  *           format: date
  *           example: "1990-10-27"
- * 
+ *
  *     PrivacySettings:
  *       type: object
  *       properties:
@@ -315,7 +323,7 @@ router.put("/update-password", updatePasswordController);
  *         searchVisibility:
  *           type: boolean
  *           example: true
- * 
+ *
  *     ContentPreferences:
  *       type: object
  *       properties:
@@ -332,5 +340,390 @@ router.put("/update-password", updatePasswordController);
  */
 
 router.put("/profile", updateProfileController);
+
+/**
+ * @swagger
+ * tags:
+ *   name: Follow
+ *   description: User relationship management
+ */
+
+/**
+ * @swagger
+ * /api/user/{userId}/follow:
+ *   post:
+ *     summary: Follow or request to follow a user
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user to follow
+ *     responses:
+ *       200:
+ *         description: Follow request successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: [following, requested]
+ *                   example: following
+ *       400:
+ *         description: Bad request (already following, self-follow, etc.)
+ *       403:
+ *         description: Forbidden (blocked, private account not accepting requests)
+ *       404:
+ *         description: User not found
+ */
+router.post("/:userId/follow", requestFollowController);
+
+/**
+ * @swagger
+ * /api/user/{requesterId}/accept:
+ *   post:
+ *     summary: Accept a follow request
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requesterId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user who sent the request
+ *     responses:
+ *       200:
+ *         description: Request accepted
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: following
+ *       400:
+ *         description: No pending request from this user
+ *       404:
+ *         description: User not found
+ */
+router.post("/:requesterId/accept", acceptFollowRequestController);
+
+/**
+ * @swagger
+ * /api/user/{requesterId}/reject:
+ *   post:
+ *     summary: Reject a follow request
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: requesterId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user who sent the request
+ *     responses:
+ *       200:
+ *         description: Request rejected
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: rejected
+ *       404:
+ *         description: User not found
+ */
+router.post("/:requesterId/reject", rejectFollowRequestController);
+
+/**
+ * @swagger
+ * /api/user/{userId}/unfollow:
+ *   delete:
+ *     summary: Unfollow a user
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user to unfollow
+ *     responses:
+ *       200:
+ *         description: Unfollow successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: unfollowed
+ *       400:
+ *         description: Not following this user
+ *       404:
+ *         description: User not found
+ */
+router.delete("/:userId/unfollow", unfollowUserController);
+
+/**
+ * @swagger
+ * /api/user/{userId}/block:
+ *   post:
+ *     summary: Block a user
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user to block
+ *     responses:
+ *       200:
+ *         description: User blocked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: blocked
+ *       400:
+ *         description: Cannot block yourself
+ *       404:
+ *         description: User not found
+ */
+router.post("/:userId/block", blockUserController);
+
+/**
+ * @swagger
+ * /api/user/{userId}/unblock:
+ *   delete:
+ *     summary: Unblock a user
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user to unblock
+ *     responses:
+ *       200:
+ *         description: User unblocked
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: unblocked
+ *       404:
+ *         description: User not found
+ */
+router.delete("/:userId/unblock", unblockUserController);
+
+/**
+ * @swagger
+ * /api/user/{userId}/status:
+ *   get:
+ *     summary: Get relationship status with a user
+ *     tags: [Follow]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user to check status with
+ *     responses:
+ *       200:
+ *         description: Relationship status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: [self, blocked, following, requested, not_following]
+ *                   example: following
+ *                 isFollowing:
+ *                   type: boolean
+ *                   example: true
+ *                 hasPendingRequest:
+ *                   type: boolean
+ *                   example: false
+ *                 isPrivate:
+ *                   type: boolean
+ *                   example: false
+ *       404:
+ *         description: User not found
+ */
+router.get("/:userId/status", getFollowStatusController);
+
+
+/**
+ * @swagger
+ * tags:
+ *   name: Relationships
+ *   description: User relationship management
+ */
+
+
+
+/**
+ * @swagger
+ * /api/user/{userId}/relationships:
+ *   get:
+ *     summary: Get a user's relationships
+ *     description: Retrieve followers, following, pending requests, and blocked users with counts
+ *     tags: [Relationships]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: ID of the user whose relationships to fetch
+ *       - in: query
+ *         name: types
+ *         schema:
+ *           type: string
+ *           enum: [followers, following, pendingFollowRequests, blockedUsers]
+ *           default: "followers,following,pendingFollowRequests,blockedUsers"
+ *         description: Comma-separated list of relationship types to include
+ *       - in: query
+ *         name: include_counts
+ *         schema:
+ *           type: boolean
+ *           default: true
+ *         description: Whether to include counts in the response
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 1000
+ *           default: 100
+ *         description: Maximum number of results per relationship type
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *     responses:
+ *       200:
+ *         description: User relationships retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 counts:
+ *                   type: object
+ *                   description: Relationship counts (only if include_counts=true)
+ *                   properties:
+ *                     followers:
+ *                       type: integer
+ *                       example: 42
+ *                     following:
+ *                       type: integer
+ *                       example: 37
+ *                     pendingRequests:
+ *                       type: integer
+ *                       example: 3
+ *                 relationships:
+ *                   type: object
+ *                   properties:
+ *                     followers:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/BasicUser'
+ *                     following:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/BasicUser'
+ *                     pendingFollowRequests:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/BasicUser'
+ *                     blockedUsers:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/BasicUser'
+ *       400:
+ *         description: Invalid request parameters
+ *       403:
+ *         description: Not authorized to view these relationships
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Internal server error
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     BasicUser:
+ *       type: object
+ *       properties:
+ *         _id:
+ *           type: string
+ *           example: "507f1f77bcf86cd799439011"
+ *         username:
+ *           type: string
+ *           example: "johndoe"
+ *         profile:
+ *           type: object
+ *           properties:
+ *             avatar:
+ *               type: string
+ *               example: "https://example.com/avatar.jpg"
+ *         isOnline:
+ *           type: boolean
+ *           example: true
+ *         lastSeen:
+ *           type: string
+ *           format: date-time
+ *           example: "2023-05-15T10:00:00Z"
+ *   securitySchemes:
+ *     BearerAuth:
+ *       type: http
+ *       scheme: bearer
+ *       bearerFormat: JWT
+ */
+
+
+router.get("/:userId/relationships", getUserRelationshipsController);
 
 export default router;

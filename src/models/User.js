@@ -122,6 +122,10 @@ const userSchema = new Schema(
       type: Number,
       default: 0,
     },
+    pendingFollowRequestsCount: {
+      type: Number,
+      default: 0,
+    },
     postCount: {
       type: Number,
       default: 0,

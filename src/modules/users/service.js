@@ -153,9 +153,9 @@ export const requestFollow = async (followerId, userIdToFollow) => {
     throw new BadRequestError("Already following this user");
   }
 
-  return withTransaction(async (session) => {
+  // Transaction-capable version
+  const executeWithTransaction = async (session) => {
     if (userToFollow.isPrivate && userToFollow.allowFollowRequests) {
-      // Private account - request follow
       await updateRelationship(
         userToFollow._id,
         follower._id,
@@ -164,17 +164,8 @@ export const requestFollow = async (followerId, userIdToFollow) => {
         "pendingFollowRequestsCount",
         session
       );
-
-      // await NotificationService.sendNotification({
-      //   recipient: userToFollow._id,
-      //   sender: follower._id,
-      //   type: "follow_request",
-      //   message: `${follower.username} wants to follow you`,
-      // });
-
       return { status: "requested" };
     } else if (!userToFollow.isPrivate) {
-      // Public account - follow directly
       await Promise.all([
         updateRelationship(
           follower._id,
@@ -193,27 +184,70 @@ export const requestFollow = async (followerId, userIdToFollow) => {
           session
         ),
       ]);
-
-      // await NotificationService.createNotification({
-      //   recipient: userToFollow._id,
-      //   sender: follower._id,
-      //   type: "new_follower",
-      //   message: `${follower.username} started following you`,
-      // });
-
       return { status: "following" };
+    }
+    throw new ForbiddenError("This user is not accepting follow requests");
+  };
+
+  // Fallback version
+  const executeWithoutTransaction = async () => {
+    // Use atomic array updates instead of transactions
+    const ops = [];
+    
+    if (userToFollow.isPrivate && userToFollow.allowFollowRequests) {
+      ops.push(
+        User.updateOne(
+          { _id: userToFollow._id },
+          { 
+            $addToSet: { pendingFollowRequests: follower._id },
+            $inc: { pendingFollowRequestsCount: 1 } 
+          }
+        ).exec()
+      );
+    } else if (!userToFollow.isPrivate) {
+      ops.push(
+        User.updateOne(
+          { _id: follower._id },
+          { 
+            $addToSet: { following: userToFollow._id },
+            $inc: { followingCount: 1 } 
+          }
+        ).exec(),
+        User.updateOne(
+          { _id: userToFollow._id },
+          { 
+            $addToSet: { followers: follower._id },
+            $inc: { followersCount: 1 } 
+          }
+        ).exec()
+      );
     } else {
       throw new ForbiddenError("This user is not accepting follow requests");
     }
-  });
+
+    await Promise.all(ops);
+    return userToFollow.isPrivate ? { status: "requested" } : { status: "following" };
+  };
+
+  try {
+    // First attempt: try with transaction
+    return await withTransaction(executeWithTransaction);
+  } catch (transactionError) {
+    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+      // Transaction not supported - fallback to atomic operations
+      return await executeWithoutTransaction();
+    }
+    // Re-throw other errors
+    throw transactionError;
+  }
 };
 
 // Accept Follow Request
 export const acceptFollowRequest = async (userId, requesterId) => {
   const { targetUser: requester } = await validateUsers(userId, requesterId);
 
-  return withTransaction(async (session) => {
-    // Remove from pending and add to followers
+  // Transaction-capable version
+  const executeWithTransaction = async (session) => {
     await Promise.all([
       updateRelationship(
         userId,
@@ -240,31 +274,85 @@ export const acceptFollowRequest = async (userId, requesterId) => {
         session
       ),
     ]);
-
-    // await NotificationService.createNotification({
-    //   recipient: requester._id,
-    //   sender: userId,
-    //   type: "follow_request_accepted",
-    //   message: `Your follow request was accepted`,
-    // });
-
     return { status: "following" };
-  });
+  };
+
+  // Fallback version
+  const executeWithoutTransaction = async () => {
+    // Atomic operations instead of transaction
+    await Promise.all([
+      User.updateOne(
+        { _id: userId },
+        { 
+          $pull: { pendingFollowRequests: requester._id },
+          $inc: { pendingFollowRequestsCount: -1 },
+          $addToSet: { followers: requester._id },
+          $inc: { followersCount: 1 }
+        }
+      ).exec(),
+      User.updateOne(
+        { _id: requester._id },
+        { 
+          $addToSet: { following: userId },
+          $inc: { followingCount: 1 }
+        }
+      ).exec()
+    ]);
+    return { status: "following" };
+  };
+
+  try {
+    // First attempt with transaction
+    return await withTransaction(executeWithTransaction);
+  } catch (transactionError) {
+    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+      // Transaction not supported - use atomic fallback
+      return await executeWithoutTransaction();
+    }
+    throw transactionError;
+  }
 };
 
 // Reject Follow Request
 export const rejectFollowRequest = async (userId, requesterId) => {
   await validateUsers(userId, requesterId);
 
-  await updateRelationship(
-    userId,
-    requesterId,
-    "$pull",
-    "pendingFollowRequests",
-    "pendingFollowRequestsCount"
-  );
+  // Transaction-capable version
+  const executeWithTransaction = async (session) => {
+    await updateRelationship(
+      userId,
+      requesterId,
+      "$pull",
+      "pendingFollowRequests",
+      "pendingFollowRequestsCount",
+      session
+    );
+    return { status: "rejected" };
+  };
 
-  return { status: "rejected" };
+  // Fallback version
+  const executeWithoutTransaction = async () => {
+    // Atomic operation - single update doesn't need transaction
+    await User.updateOne(
+      { _id: userId },
+      { 
+        $pull: { pendingFollowRequests: requesterId },
+        $inc: { pendingFollowRequestsCount: -1 }
+      }
+    ).exec();
+    return { status: "rejected" };
+  };
+
+  try {
+    // First attempt with transaction
+    return await withTransaction(executeWithTransaction);
+  } catch (transactionError) {
+    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+      // Transaction not supported - use atomic fallback
+      return await executeWithoutTransaction();
+    }
+    throw transactionError;
+  }
 };
 
 // Unfollow
@@ -275,7 +363,8 @@ export const unfollow = async (userId, userIdToUnfollow) => {
     throw new NotFoundError("Not following this user");
   }
 
-  return withTransaction(async (session) => {
+  // Transaction-capable version
+  const executeWithTransaction = async (session) => {
     await Promise.all([
       updateRelationship(
         userId,
@@ -294,20 +383,48 @@ export const unfollow = async (userId, userIdToUnfollow) => {
         session
       ),
     ]);
-
     return { status: "unfollowed" };
-  });
+  };
+
+  // Atomic fallback version
+  const executeWithoutTransaction = async () => {
+    await Promise.all([
+      User.updateOne(
+        { _id: userId },
+        {
+          $pull: { following: targetUser._id },
+          $inc: { followingCount: -1 }
+        }
+      ).exec(),
+      User.updateOne(
+        { _id: targetUser._id },
+        {
+          $pull: { followers: userId },
+          $inc: { followersCount: -1 }
+        }
+      ).exec()
+    ]);
+    return { status: "unfollowed" };
+  };
+
+  try {
+    // First attempt with transaction
+    return await withTransaction(executeWithTransaction);
+  } catch (transactionError) {
+    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+      // Transaction not supported - use atomic fallback
+      return await executeWithoutTransaction();
+    }
+    throw transactionError;
+  }
 };
 
 // Block User
 export const blockUser = async (userId, userIdToBlock) => {
-  const { user, targetUser } = await validateUsers(
-    userId,
-    userIdToBlock,
-    false
-  );
+  const { user, targetUser } = await validateUsers(userId, userIdToBlock, false);
 
-  return withTransaction(async (session) => {
+  // Transaction-capable version
+  const executeWithTransaction = async (session) => {
     const operations = [
       updateRelationship(
         userId,
@@ -319,7 +436,7 @@ export const blockUser = async (userId, userIdToBlock) => {
       ),
     ];
 
-    // Remove any existing follow relationships
+    // Remove any existing relationships
     if (user.following.includes(targetUser._id)) {
       operations.push(
         updateRelationship(
@@ -361,7 +478,69 @@ export const blockUser = async (userId, userIdToBlock) => {
 
     await Promise.all(operations);
     return { status: "blocked" };
-  });
+  };
+
+  // Atomic fallback version
+  const executeWithoutTransaction = async () => {
+    const updates = [
+      // Always block the user
+      User.updateOne(
+        { _id: userId },
+        { $addToSet: { blockedUsers: targetUser._id } }
+      ).exec()
+    ];
+
+    // Conditional relationship removals
+    if (user.following.includes(targetUser._id)) {
+      updates.push(
+        User.updateOne(
+          { _id: userId },
+          {
+            $pull: { following: targetUser._id },
+            $inc: { followingCount: -1 }
+          }
+        ).exec()
+      );
+    }
+
+    if (targetUser.followers.includes(user._id)) {
+      updates.push(
+        User.updateOne(
+          { _id: targetUser._id },
+          {
+            $pull: { followers: userId },
+            $inc: { followersCount: -1 }
+          }
+        ).exec()
+      );
+    }
+
+    if (user.pendingFollowRequests.includes(targetUser._id)) {
+      updates.push(
+        User.updateOne(
+          { _id: userId },
+          {
+            $pull: { pendingFollowRequests: targetUser._id },
+            $inc: { pendingFollowRequestsCount: -1 }
+          }
+        ).exec()
+      );
+    }
+
+    await Promise.all(updates);
+    return { status: "blocked" };
+  };
+
+  try {
+    // First attempt with transaction
+    return await withTransaction(executeWithTransaction);
+  } catch (transactionError) {
+    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+      // Transaction not supported - use atomic fallback
+      return await executeWithoutTransaction();
+    }
+    throw transactionError;
+  }
 };
 
 // Unblock User
@@ -479,6 +658,7 @@ export const getUserRelationships = async (
     if (!user) {
       throw new BadRequestError("User not found");
     }
+    console.log("Fetched user relationships:", user);
 
     // Transform the result
     const result = {
@@ -502,7 +682,6 @@ export const getUserRelationships = async (
     keys.forEach((key) => {
       result.relationships[key] = user[key] || [];
     });
-
     return result;
   } catch (error) {
     if (error instanceof ApiError) throw error;

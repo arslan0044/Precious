@@ -262,7 +262,7 @@ export const getUserRelationshipsController = async (req, res) => {
       relationshipTypes,
       options
     );
-
+    console.log("Fetched relationships:", relationships);
     // Cache the data for 5 minutes
     await redis.setex(cacheKey, 300, JSON.stringify(relationships));
 

@@ -10,6 +10,7 @@ import {
   unblockUser,
   getFollowStatus,
   getUserRelationships,
+  getAllUsers
 } from "./service.js";
 import {
   InternalServerError,
@@ -273,5 +274,39 @@ export const getUserRelationshipsController = async (req, res) => {
     }
     console.error("Relationship controller error:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+
+export const getAllUsersController = async (req, res, next) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      search = "",
+    } = req.query;
+
+    const users = await getAllUsers({
+      page: Number(page),
+      limit: Number(limit),
+      sortBy,
+      sortOrder,
+      search: search.trim(),
+    });
+
+    res.status(200).json({
+      success: true,
+      data: users.data,
+      meta: users.meta,
+    });
+  } catch (error) {
+    next(
+      error instanceof Error
+        ? error
+        : new InternalServerError("Unknown error")
+    );
   }
 };

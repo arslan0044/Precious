@@ -193,14 +193,14 @@ export const requestFollow = async (followerId, userIdToFollow) => {
   const executeWithoutTransaction = async () => {
     // Use atomic array updates instead of transactions
     const ops = [];
-    
+
     if (userToFollow.isPrivate && userToFollow.allowFollowRequests) {
       ops.push(
         User.updateOne(
           { _id: userToFollow._id },
-          { 
+          {
             $addToSet: { pendingFollowRequests: follower._id },
-            $inc: { pendingFollowRequestsCount: 1 } 
+            $inc: { pendingFollowRequestsCount: 1 },
           }
         ).exec()
       );
@@ -208,16 +208,16 @@ export const requestFollow = async (followerId, userIdToFollow) => {
       ops.push(
         User.updateOne(
           { _id: follower._id },
-          { 
+          {
             $addToSet: { following: userToFollow._id },
-            $inc: { followingCount: 1 } 
+            $inc: { followingCount: 1 },
           }
         ).exec(),
         User.updateOne(
           { _id: userToFollow._id },
-          { 
+          {
             $addToSet: { followers: follower._id },
-            $inc: { followersCount: 1 } 
+            $inc: { followersCount: 1 },
           }
         ).exec()
       );
@@ -226,14 +226,19 @@ export const requestFollow = async (followerId, userIdToFollow) => {
     }
 
     await Promise.all(ops);
-    return userToFollow.isPrivate ? { status: "requested" } : { status: "following" };
+    return userToFollow.isPrivate
+      ? { status: "requested" }
+      : { status: "following" };
   };
 
   try {
     // First attempt: try with transaction
     return await withTransaction(executeWithTransaction);
   } catch (transactionError) {
-    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+    if (
+      transactionError.code === 20 ||
+      transactionError.codeName === "IllegalOperation"
+    ) {
       // Transaction not supported - fallback to atomic operations
       return await executeWithoutTransaction();
     }
@@ -283,20 +288,20 @@ export const acceptFollowRequest = async (userId, requesterId) => {
     await Promise.all([
       User.updateOne(
         { _id: userId },
-        { 
+        {
           $pull: { pendingFollowRequests: requester._id },
           $inc: { pendingFollowRequestsCount: -1 },
           $addToSet: { followers: requester._id },
-          $inc: { followersCount: 1 }
+          $inc: { followersCount: 1 },
         }
       ).exec(),
       User.updateOne(
         { _id: requester._id },
-        { 
+        {
           $addToSet: { following: userId },
-          $inc: { followingCount: 1 }
+          $inc: { followingCount: 1 },
         }
-      ).exec()
+      ).exec(),
     ]);
     return { status: "following" };
   };
@@ -305,7 +310,10 @@ export const acceptFollowRequest = async (userId, requesterId) => {
     // First attempt with transaction
     return await withTransaction(executeWithTransaction);
   } catch (transactionError) {
-    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+    if (
+      transactionError.code === 20 ||
+      transactionError.codeName === "IllegalOperation"
+    ) {
       // Transaction not supported - use atomic fallback
       return await executeWithoutTransaction();
     }
@@ -335,9 +343,9 @@ export const rejectFollowRequest = async (userId, requesterId) => {
     // Atomic operation - single update doesn't need transaction
     await User.updateOne(
       { _id: userId },
-      { 
+      {
         $pull: { pendingFollowRequests: requesterId },
-        $inc: { pendingFollowRequestsCount: -1 }
+        $inc: { pendingFollowRequestsCount: -1 },
       }
     ).exec();
     return { status: "rejected" };
@@ -347,7 +355,10 @@ export const rejectFollowRequest = async (userId, requesterId) => {
     // First attempt with transaction
     return await withTransaction(executeWithTransaction);
   } catch (transactionError) {
-    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+    if (
+      transactionError.code === 20 ||
+      transactionError.codeName === "IllegalOperation"
+    ) {
       // Transaction not supported - use atomic fallback
       return await executeWithoutTransaction();
     }
@@ -393,16 +404,16 @@ export const unfollow = async (userId, userIdToUnfollow) => {
         { _id: userId },
         {
           $pull: { following: targetUser._id },
-          $inc: { followingCount: -1 }
+          $inc: { followingCount: -1 },
         }
       ).exec(),
       User.updateOne(
         { _id: targetUser._id },
         {
           $pull: { followers: userId },
-          $inc: { followersCount: -1 }
+          $inc: { followersCount: -1 },
         }
-      ).exec()
+      ).exec(),
     ]);
     return { status: "unfollowed" };
   };
@@ -411,7 +422,10 @@ export const unfollow = async (userId, userIdToUnfollow) => {
     // First attempt with transaction
     return await withTransaction(executeWithTransaction);
   } catch (transactionError) {
-    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+    if (
+      transactionError.code === 20 ||
+      transactionError.codeName === "IllegalOperation"
+    ) {
       // Transaction not supported - use atomic fallback
       return await executeWithoutTransaction();
     }
@@ -421,7 +435,11 @@ export const unfollow = async (userId, userIdToUnfollow) => {
 
 // Block User
 export const blockUser = async (userId, userIdToBlock) => {
-  const { user, targetUser } = await validateUsers(userId, userIdToBlock, false);
+  const { user, targetUser } = await validateUsers(
+    userId,
+    userIdToBlock,
+    false
+  );
 
   // Transaction-capable version
   const executeWithTransaction = async (session) => {
@@ -487,7 +505,7 @@ export const blockUser = async (userId, userIdToBlock) => {
       User.updateOne(
         { _id: userId },
         { $addToSet: { blockedUsers: targetUser._id } }
-      ).exec()
+      ).exec(),
     ];
 
     // Conditional relationship removals
@@ -497,7 +515,7 @@ export const blockUser = async (userId, userIdToBlock) => {
           { _id: userId },
           {
             $pull: { following: targetUser._id },
-            $inc: { followingCount: -1 }
+            $inc: { followingCount: -1 },
           }
         ).exec()
       );
@@ -509,7 +527,7 @@ export const blockUser = async (userId, userIdToBlock) => {
           { _id: targetUser._id },
           {
             $pull: { followers: userId },
-            $inc: { followersCount: -1 }
+            $inc: { followersCount: -1 },
           }
         ).exec()
       );
@@ -521,7 +539,7 @@ export const blockUser = async (userId, userIdToBlock) => {
           { _id: userId },
           {
             $pull: { pendingFollowRequests: targetUser._id },
-            $inc: { pendingFollowRequestsCount: -1 }
+            $inc: { pendingFollowRequestsCount: -1 },
           }
         ).exec()
       );
@@ -535,7 +553,10 @@ export const blockUser = async (userId, userIdToBlock) => {
     // First attempt with transaction
     return await withTransaction(executeWithTransaction);
   } catch (transactionError) {
-    if (transactionError.code === 20 || transactionError.codeName === 'IllegalOperation') {
+    if (
+      transactionError.code === 20 ||
+      transactionError.codeName === "IllegalOperation"
+    ) {
       // Transaction not supported - use atomic fallback
       return await executeWithoutTransaction();
     }
@@ -690,5 +711,59 @@ export const getUserRelationships = async (
       "Failed to fetch relationships",
       error.message
     );
+  }
+};
+
+
+export const getAllUsers = async (options = {}) => {
+  const {
+    limit = 100,
+    page = 1,
+    sortBy = "createdAt",
+    sortOrder = "desc", // "asc" or "desc"
+    search = "",        // new
+  } = options;
+
+  const sanitizedLimit = Math.max(1, Math.min(parseInt(limit), 1000));
+  const sanitizedPage = Math.max(1, parseInt(page));
+  const skip = (sanitizedPage - 1) * sanitizedLimit;
+
+  // Base query: only active users with "user" role
+  const query = {
+    role: "user",
+    status: "active",
+  };
+
+  // Add case-insensitive search on username or name
+  if (search?.trim()) {
+    query.$or = [
+      { username: { $regex: search, $options: "i" } },
+      { name: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  try {
+    const [users, totalCount] = await Promise.all([
+      User.find(query)
+        .select("-password -__v -fcmTokens")
+        .sort({ [sortBy]: sortOrder === "asc" ? 1 : -1 })
+        .skip(skip)
+        .limit(sanitizedLimit)
+        .lean(),
+      User.countDocuments(query),
+    ]);
+
+    return {
+      success: true,
+      data: users,
+      meta: {
+        totalCount,
+        totalPages: Math.ceil(totalCount / sanitizedLimit),
+        currentPage: sanitizedPage,
+        pageSize: sanitizedLimit,
+      },
+    };
+  } catch (error) {
+    throw new DatabaseError(500, "Failed to fetch users", error?.message);
   }
 };

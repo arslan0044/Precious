@@ -8,7 +8,9 @@ import {
   unfollowUserController,
   blockUserController,
   unblockUserController,
-  getFollowStatusController,getUserRelationshipsController
+  getFollowStatusController,
+  getUserRelationshipsController,
+  getAllUsersController,
 } from "./controller.js";
 import express from "express";
 import { authenticate } from "../../middlewares/auth.js";
@@ -586,15 +588,12 @@ router.delete("/:userId/unblock", unblockUserController);
  */
 router.get("/:userId/status", getFollowStatusController);
 
-
 /**
  * @swagger
  * tags:
  *   name: Relationships
  *   description: User relationship management
  */
-
-
 
 /**
  * @swagger
@@ -723,7 +722,108 @@ router.get("/:userId/status", getFollowStatusController);
  *       bearerFormat: JWT
  */
 
-
 router.get("/:userId/relationships", getUserRelationshipsController);
 
+/**
+ * @swagger
+ * /api/user/all-users:
+ *   get:
+ *     summary: Get all active users
+ *     description: Retrieve a paginated list of active users with optional sorting and search.
+ *     tags: [Relationships]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 20
+ *         description: Number of results per page
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, username, lastSeen]
+ *           default: createdAt
+ *         description: Field to sort by
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *           minLength: 1
+ *         description: Search keyword to filter by username or name
+ *     responses:
+ *       200:
+ *         description: A list of users retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/BasicUser'
+ *                 meta:
+ *                   type: object
+ *                   properties:
+ *                     totalCount:
+ *                       type: integer
+ *                       example: 150
+ *                     totalPages:
+ *                       type: integer
+ *                       example: 8
+ *                     currentPage:
+ *                       type: integer
+ *                       example: 1
+ *                     pageSize:
+ *                       type: integer
+ *                       example: 20
+ *       400:
+ *         description: Invalid request parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid pagination parameters"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Internal server error"
+ */
+
+router.get("/all-users", getAllUsersController);
 export default router;

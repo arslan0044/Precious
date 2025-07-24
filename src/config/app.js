@@ -26,11 +26,10 @@ import { swaggerDocs } from "./swagger.js";
 const app = express();
 // // const server = createServer(app);
 app.use(express.static("public"));
-
 // // ========================
 // // Security Middleware
 // // ========================
-admin
+admin;
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -97,8 +96,15 @@ app.use(
 // // ========================
 // // Rate Limiting
 // // ========================
+// app.set("trust proxy", true);
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
+
 app.use(
   rateLimit({
+    validate: {
+      validationsConfig: false,
+      default: true,
+    },
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100, // Limit each IP to 100 requests per window
     standardHeaders: true,
@@ -115,29 +121,22 @@ app.use(express.json({ limit: "10kb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-
-
 // Custom error handler for JSON parse failures
 app.use((err, req, res, next) => {
-  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
     return res.status(400).json({
       code: "INVALID_JSON",
       message: "Malformed JSON. Please fix your syntax.",
       example: {
         correctFormat: {
           email: "user@example.com",
-          password: "yourPassword123"
-        }
-      }
+          password: "yourPassword123",
+        },
+      },
     });
   }
   next(err); // Pass to next error handler
 });
-
-
-
-
-
 
 // // ========================
 // // Logging
@@ -163,6 +162,9 @@ app.get("/", async (req, res) => {
       mongodb: "unhealthy",
       redis: "unhealthy",
     },
+    ApiDocs: "/api-docs",
+    ApiJson: "/api-docs.json",
+    massage: "Welcome to the API  This is a health check endpoint and api documentation  Please visit /api-docs for more information. Thank you for using our service!",
   };
 
   // try {

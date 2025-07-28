@@ -10,7 +10,8 @@ import { logger } from "./config/logger.js";
 // import { disconnectDB } from "./config/database.js";
 import { initSocket } from "./socket/socket.js";
 
-const PORT =  process.env.PORT || 10000; 
+const PORT = process.env.PORT || 10000;
+console.log(PORT);
 // Function to get network IP addresses
 const getNetworkInfo = () => {
   const interfaces = os.networkInterfaces();

@@ -54,10 +54,10 @@ app.use(
       config.get("sessionSecrate") || crypto.randomBytes(64).toString("hex"),
     resave: false,
     saveUninitialized: false, // Changed for GDPR compliance
-    store:
-      config.get("env") === "production"
-        ? new RedisStore({ client: redisClient })
-        : null,
+    // store:
+    //   config.get("env") === "production"
+    //     ? new RedisStore({ client: redisClient })
+    //     : null,
     cookie: {
       secure: false,
       secure: config.get("env") === "production",

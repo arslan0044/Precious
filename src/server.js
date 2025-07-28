@@ -75,7 +75,7 @@ const startServer = async () => {
     // ========================
     server.listen(PORT, "0.0.0.0", () => {
       const networkInfo = getNetworkInfo();
-      const localURL = `http://localhost:${PORT}`;
+      const localURL = `http://0.0.0.0:${PORT}`;
       const networkURLs = networkInfo
         .map((info) => `http://${info.address}:${PORT}`)
         .join("\n        ");
@@ -114,7 +114,8 @@ const startServer = async () => {
         ################################################
       `);
     });
-
+    server.keepAliveTimeout = 120000; // 2 minutes
+    server.headersTimeout = 120000;
     return server;
   } catch (error) {
     logger.error("❌ Failed to start server:", error);

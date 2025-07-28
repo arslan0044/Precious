@@ -60,3 +60,5 @@ Icon?
 *.bak
 
 test/
+
+data.json

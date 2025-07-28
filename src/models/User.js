@@ -79,7 +79,11 @@ const userSchema = new Schema(
       enum: ["active", "inactive", "suspended", "deleted"],
       default: "active",
     },
-
+    showActivityStatus: {
+      type: String,
+      enum: ["online", "away", "busy", "offline"],
+      default: "offline",
+    },
     isPrivate: {
       type: Boolean,
       default: false,
@@ -175,6 +179,12 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    addresses: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Address",
+      },
+    ],
   },
   {
     timestamps: true,

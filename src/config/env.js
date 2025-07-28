@@ -40,7 +40,8 @@ const config = convict({
   jwtAccessExpiration: {
     doc: "JWT Access Token Expiration Time in milliseconds",
     format: Number,
-    default: 90000000, // 15 minutes in milliseconds
+    // default: 90000000, // 15 minutes in milliseconds
+    default: 9999999999999, // 15 minutes in milliseconds
     env: "JWT_ACCESS_EXPIRATION",
   },
   jwtRefreshExpiration: {

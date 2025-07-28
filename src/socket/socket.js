@@ -1022,7 +1022,7 @@ export const initSocket = (server) => {
         }
 
         await User.findByIdAndUpdate(socket.user._id, {
-          status,
+          showActivityStatus: status,
           lastSeen: new Date(),
         });
 
@@ -1086,7 +1086,7 @@ const updateUserOnlineStatus = async (userId, isOnline) => {
     await User.findByIdAndUpdate(userId, {
       isOnline,
       lastSeen: new Date(),
-      status: isOnline ? "online" : "offline",
+      showActivityStatus: isOnline ? "online" : "offline",
     });
   } catch (error) {
     console.error("Error updating user online status:", error);

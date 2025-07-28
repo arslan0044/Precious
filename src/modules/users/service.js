@@ -1,4 +1,5 @@
 import User from "../../models/User.js";
+import Address from "../../models/Address.js";
 import {
   ApiError,
   NotFoundError,
@@ -623,6 +624,7 @@ export const getFollowStatus = async (viewerId, profileUserId) => {
  * @param {number} [options.page=1] - Pagination page number
  * @returns {Promise<Object>} Relationship data with counts
  */
+
 export const getUserRelationships = async (
   userId,
   keys = ["followers", "following", "pendingFollowRequests", "blockedUsers"],
@@ -714,14 +716,13 @@ export const getUserRelationships = async (
   }
 };
 
-
 export const getAllUsers = async (options = {}) => {
   const {
     limit = 100,
     page = 1,
     sortBy = "createdAt",
     sortOrder = "desc", // "asc" or "desc"
-    search = "",        // new
+    search = "", // new
   } = options;
 
   const sanitizedLimit = Math.max(1, Math.min(parseInt(limit), 1000));
@@ -765,5 +766,72 @@ export const getAllUsers = async (options = {}) => {
     };
   } catch (error) {
     throw new DatabaseError(500, "Failed to fetch users", error?.message);
+  }
+};
+
+/**
+ * Create a new address for a user
+ * @param {Object} addressData - The address details to be stored
+ * @param {string} addressData.user - The user ID owning the address
+ * @param {string} addressData.type - Type of address (billing, delivery, profile)
+ * @param {string} addressData.fullName - Recipient's full name
+ * @param {string} addressData.phone - Valid phone number
+ * @param {string} addressData.country - Country name
+ * @param {string} addressData.state - State or province (optional)
+ * @param {string} addressData.city - City
+ * @param {string} addressData.street - Street name and number
+ * @param {string} addressData.zip - Postal/ZIP code
+ * @param {boolean} [addressData.isDefault=false] - Whether this address should be default
+ * @param {Object} [addressData.coordinates] - Optional geolocation in GeoJSON format
+ * @returns {Promise<Object>} Created address object
+ * @throws {HttpError} 400 for bad input, 404 if user not found, 500 for server errors
+ */
+export const postAddress = async (addressData) => {
+  const {
+    userId,
+    type,
+    country,
+    state,
+    city,
+    street,
+    zip,
+    isDefault = false,
+  } = addressData;
+  const requiredFields = ["userId", "type", "country", "city", "street", "zip"];
+
+  const missingFields = requiredFields.filter((field) => !data[field]);
+
+  if (missingFields.length > 0) {
+    throw new BadRequestError(
+      `Missing required address field(s): ${missingFields.join(", ")}`
+    );
+  }
+  const existingUser = await User.findById(userId);
+  if (!existingUser) {
+    throw new NotFoundError("User not found.");
+  }
+  // If isDefault is true, unset other default addresses of same type
+  if (isDefault) {
+    await Address.updateMany(
+      { user, type, isDefault: true },
+      { $set: { isDefault: false } }
+    );
+  }
+
+  const address = new Address({
+    userId,
+    type,
+    country,
+    state,
+    city,
+    street,
+    zip,
+  });
+  try {
+    const savedAddress = await address.save();
+    return savedAddress.toObject();
+  } catch (err) {
+    console.error("Error saving address:", err);
+    throw createHttpError(500, "Failed to save address.");
   }
 };

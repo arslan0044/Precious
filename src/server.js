@@ -10,7 +10,7 @@ import { logger } from "./config/logger.js";
 // import { disconnectDB } from "./config/database.js";
 import { initSocket } from "./socket/socket.js";
 
-const PORT = config.get("port");
+const PORT =  process.env.PORT || 10000; 
 // Function to get network IP addresses
 const getNetworkInfo = () => {
   const interfaces = os.networkInterfaces();
@@ -37,7 +37,8 @@ const startServer = async () => {
   try {
     const server = http.createServer(app);
     const io = initSocket(server);
-
+    server.keepAliveTimeout = 120000; // 2 minutes
+    server.headersTimeout = 120000;
     // ========================
     // Graceful Shutdown
     // ========================
@@ -114,8 +115,7 @@ const startServer = async () => {
         ################################################
       `);
     });
-    server.keepAliveTimeout = 120000; // 2 minutes
-    server.headersTimeout = 120000;
+
     return server;
   } catch (error) {
     logger.error("❌ Failed to start server:", error);

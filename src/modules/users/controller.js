@@ -228,7 +228,7 @@ export const getUserRelationshipsController = async (req, res) => {
     if (userId !== requestingUserId.toString()) {
       throw new ForbiddenError("You can only view your own relationships");
     }
-    console.log(userId, requestingUserId);
+    // console.log(userId, requestingUserId);
 
     // Get query parameters
     const {
@@ -263,7 +263,7 @@ export const getUserRelationshipsController = async (req, res) => {
       relationshipTypes,
       options
     );
-    console.log("Fetched relationships:", relationships);
+    // console.log("Fetched relationships:", relationships);
     // Cache the data for 5 minutes
     await redis.setex(cacheKey, 300, JSON.stringify(relationships));
 

@@ -30,7 +30,7 @@ const swaggerOptions = {
         description: "Production server",
       },
       {
-        url: `https://precious-m3jf.onrender.com`,
+        url: `https://8gldwlz7-8000.inc1.devtunnels.ms/`,
         description: "Testing server",
       },
     ],

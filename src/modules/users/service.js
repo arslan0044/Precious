@@ -8,6 +8,7 @@ import {
   ForbiddenError,
   DatabaseError,
 } from "../../utils/apiError.js";
+import Conversation from "../../models/conversation.js";
 import mongoose from "mongoose";
 export async function userinfo(userId) {
   const user = await User.findById(userId).lean();
@@ -150,86 +151,110 @@ export const requestFollow = async (followerId, userIdToFollow) => {
     userIdToFollow
   );
 
+  // Check if already following
   if (follower.following.includes(userToFollow._id)) {
     throw new BadRequestError("Already following this user");
   }
 
+  // Check if request already pending (only for private accounts)
+  if (
+    userToFollow.isPrivate &&
+    userToFollow.pendingFollowRequests.some((id) => id.equals(follower._id))
+  ) {
+    throw new BadRequestError("Follow request already pending");
+  }
+
   // Transaction-capable version
   const executeWithTransaction = async (session) => {
-    if (userToFollow.isPrivate && userToFollow.allowFollowRequests) {
-      await updateRelationship(
-        userToFollow._id,
-        follower._id,
-        "$addToSet",
-        "pendingFollowRequests",
-        "pendingFollowRequestsCount",
-        session
+    if (userToFollow.allow_friends_Request) {
+      // For private accounts, always add to pendingFollowRequests
+      await User.findOneAndUpdate(
+        { _id: userToFollow._id },
+        {
+          $addToSet: {
+            pendingFollowRequests: follower._id,
+            following: userToFollow._id,
+          },
+          $inc: { pendingFollowRequestsCount: 1, followingCount: 1 },
+        },
+        { session, new: true }
       );
       return { status: "requested" };
-    } else if (!userToFollow.isPrivate) {
+    } else {
+      // For public accounts, follow directly
       await Promise.all([
-        updateRelationship(
-          follower._id,
-          userToFollow._id,
-          "$addToSet",
-          "following",
-          "followingCount",
-          session
-        ),
-        updateRelationship(
-          userToFollow._id,
-          follower._id,
-          "$addToSet",
-          "followers",
-          "followersCount",
-          session
-        ),
-      ]);
-      return { status: "following" };
-    }
-    throw new ForbiddenError("This user is not accepting follow requests");
-  };
-
-  // Fallback version
-  const executeWithoutTransaction = async () => {
-    // Use atomic array updates instead of transactions
-    const ops = [];
-
-    if (userToFollow.isPrivate && userToFollow.allowFollowRequests) {
-      ops.push(
-        User.updateOne(
-          { _id: userToFollow._id },
-          {
-            $addToSet: { pendingFollowRequests: follower._id },
-            $inc: { pendingFollowRequestsCount: 1 },
-          }
-        ).exec()
-      );
-    } else if (!userToFollow.isPrivate) {
-      ops.push(
-        User.updateOne(
+        User.findOneAndUpdate(
           { _id: follower._id },
           {
             $addToSet: { following: userToFollow._id },
             $inc: { followingCount: 1 },
-          }
-        ).exec(),
-        User.updateOne(
+          },
+          { session, new: true }
+        ),
+        User.findOneAndUpdate(
           { _id: userToFollow._id },
           {
             $addToSet: { followers: follower._id },
             $inc: { followersCount: 1 },
-          }
-        ).exec()
-      );
-    } else {
-      throw new ForbiddenError("This user is not accepting follow requests");
+          },
+          { session, new: true }
+        ),
+      ]);
+      return { status: "following" };
     }
+  };
 
-    await Promise.all(ops);
-    return userToFollow.isPrivate
-      ? { status: "requested" }
-      : { status: "following" };
+  // Fallback version
+  const executeWithoutTransaction = async () => {
+    if (userToFollow.allow_friends_Request) {
+      // For private accounts
+      const updated = await User.findOneAndUpdate(
+        { _id: userToFollow._id },
+        {
+          $addToSet: {
+            pendingFollowRequests: follower._id,
+            following: userToFollow._id,
+          },
+          $inc: { pendingFollowRequestsCount: 1, followingCount: 1 },
+        },
+        { new: true }
+      );
+
+      if (
+        !updated.pendingFollowRequests.some((id) => id.equals(follower._id))
+      ) {
+        throw new Error("Failed to add follow request");
+      }
+      return { status: "requested" };
+    } else {
+      // For public accounts
+      const [updatedFollower, updatedFollowee] = await Promise.all([
+        User.findOneAndUpdate(
+          { _id: follower._id },
+          {
+            $addToSet: { following: userToFollow._id },
+            $inc: { followingCount: 1 },
+          },
+          { new: true }
+        ),
+        User.findOneAndUpdate(
+          { _id: userToFollow._id },
+          {
+            $addToSet: { followers: follower._id },
+            $inc: { followersCount: 1 },
+          },
+          { new: true }
+        ),
+      ]);
+
+      if (
+        !updatedFollower.following.some((id) => id.equals(userToFollow._id)) ||
+        !updatedFollowee.followers.some((id) => id.equals(follower._id))
+      ) {
+        throw new Error("Failed to establish follow relationship");
+      }
+      return { status: "following" };
+    }
   };
 
   try {
@@ -280,6 +305,12 @@ export const acceptFollowRequest = async (userId, requesterId) => {
         session
       ),
     ]);
+    // Create conversation between users after successful follow
+    await Conversation.findOrCreateDirectConversation([
+      userId,
+      requester._id.toString(),
+    ])
+
     return { status: "following" };
   };
 
@@ -304,6 +335,12 @@ export const acceptFollowRequest = async (userId, requesterId) => {
         }
       ).exec(),
     ]);
+
+    await Conversation.findOrCreateDirectConversation([
+      userId,
+      requester._id.toString(),
+    ]);
+
     return { status: "following" };
   };
 
@@ -673,7 +710,7 @@ export const getUserRelationships = async (
       .select(projection)
       .populate({
         path: keys.join(" "),
-        select: "_id username profile.avatar isOnline lastSeen",
+        select: "_id username profile.avatar isOnline lastSeen ",
         options: { limit, skip },
       })
       .lean();
@@ -681,7 +718,7 @@ export const getUserRelationships = async (
     if (!user) {
       throw new BadRequestError("User not found");
     }
-    console.log("Fetched user relationships:", user);
+    // console.log("Fetched user relationships:", user);
 
     // Transform the result
     const result = {
